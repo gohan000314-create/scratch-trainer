@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Scratch Trainer — 搓盘实时可视化与音游训练器 (Rane One 适配版)</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- 顶部状态栏（复刻视频顶部胶囊风格） -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="brand-dot" id="midiStatusDot" title="MIDI 连接状态"></span>
+        <span class="brand-title">SCRATCH TRAINER</span>
+        <span class="midi-badge" id="midiDeviceLabel">未连接 MIDI（可用键盘/鼠标体验）</span>
+      </div>
+
+      <!-- 中央胶囊：复刻视频 00:11 顶部的 Baby Rhythm • 100 BPM / Platter -->
+      <div class="session-pill">
+        <div class="pill-row">
+          <span class="pill-tag" id="modeTag">FADER</span>
+          <span class="pill-title" id="patternTitle">1/8 Transform Cuts</span>
+          <span class="pill-sep">•</span>
+          <span class="pill-bpm" id="bpmDisplay">100 BPM</span>
+        </div>
+        <div class="pill-sub" id="modeSubtitle">Fader</div>
+      </div>
+
+      <div class="topbar-right">
+        <button class="btn btn-ghost" id="btnCompanionMode" title="开启后静音内置伴奏和搓盘音，专心配合 Serato / djay 使用">
+          🎧 <span class="hide-narrow">Serato/djay </span>伴随: <strong id="companionState">关</strong>
+        </button>
+        <button class="btn btn-accent" id="btnOpenMidi">🎛️ <span class="hide-narrow">Rane One / </span>MIDI</button>
+      </div>
+    </header>
+
+    <!-- 主舞台：高帧率 Canvas 谱面与实时示波区 -->
+    <main class="stage-wrapper">
+      <canvas id="stageCanvas"></canvas>
+
+      <!-- 左上角实时数据 HUD -->
+      <div class="hud-stats" id="hudStats">
+        <div class="stat-item" id="statAccuracyItem">
+          <span class="stat-label" id="statAccuracyLabel">准确率</span>
+          <span class="stat-val" id="statAccuracy">100%</span>
+        </div>
+        <div class="stat-item" id="statComboItem">
+          <span class="stat-label">连击</span>
+          <span class="stat-val accent-green" id="statCombo">0</span>
+        </div>
+        <div class="stat-item" id="statHitsItem">
+          <span class="stat-label" id="statHitsLabel">命中 / 总计</span>
+          <span class="stat-val" id="statHits">0 / 0</span>
+        </div>
+      </div>
+
+      <!-- 右上角实时输入表（横推位置 + 转盘速度） -->
+      <div class="hud-meters">
+        <div class="meter-box">
+          <div class="meter-head">
+            <span>横推 FADER</span>
+            <span id="faderStateText">关闭</span>
+          </div>
+          <div class="meter-bar">
+            <div class="meter-fill" id="faderMeterFill"></div>
+            <div class="meter-cutline" id="faderCutLine" title="Cut-In 切入点"></div>
+          </div>
+        </div>
+        <div class="meter-box">
+          <div class="meter-head">
+            <span>转盘 PLATTER</span>
+            <span id="platterVelText">0.0</span>
+          </div>
+          <div class="meter-bar center-bar">
+            <div class="meter-fill-center" id="platterMeterFill"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 判定文字提示（PERFECT / GOOD / MISS） -->
+      <div class="judge-popup" id="judgePopup"></div>
+
+      <!-- 无硬件操作提示浮层 -->
+      <div class="hint-bar" id="hintBar">
+        💡 无设备也能试玩：按 <kbd>Space</kbd> 或 <kbd>J</kbd>/<kbd>K</kbd> 切横推，在画布上<strong>左右拖动鼠标 / 滚轮</strong>模拟搓盘；连接 Rane One 后点右上角一键映射。
+      </div>
+    </main>
+
+    <!-- 底部控制栏 -->
+    <footer class="control-bar">
+      <!-- 模式切换 -->
+      <div class="ctrl-group">
+        <div class="segmented" id="modeSelector">
+          <button class="seg-btn active" data-mode="fader">Fader 横推</button>
+          <button class="seg-btn" data-mode="platter">Platter 唱盘</button>
+          <button class="seg-btn" data-mode="combo">Combo 综合</button>
+          <button class="seg-btn" data-mode="free">Free 自由示波</button>
+        </div>
+      </div>
+
+      <!-- 谱面选择 -->
+      <div class="ctrl-group">
+        <label class="ctrl-label" for="patternSelect">谱面</label>
+        <select id="patternSelect" class="ctrl-select"></select>
+      </div>
+
+      <!-- 播放 / 暂停 / 重置 -->
+      <div class="ctrl-group">
+        <button class="btn btn-primary" id="btnPlayPause">▶ 开始练习</button>
+        <button class="btn btn-ghost" id="btnResetStats" title="重置统计与轨迹">↺ 重置</button>
+      </div>
+
+      <!-- BPM 调节 -->
+      <div class="ctrl-group bpm-group">
+        <label class="ctrl-label" for="bpmSlider">BPM</label>
+        <button class="btn-mini" id="btnBpmDown">−</button>
+        <input type="range" id="bpmSlider" min="65" max="145" value="100" step="1" />
+        <button class="btn-mini" id="btnBpmUp">+</button>
+        <span class="bpm-num" id="bpmNum">100</span>
+      </div>
+
+      <!-- 伴奏与采样 -->
+      <div class="ctrl-group">
+        <label class="ctrl-label" for="beatSelect">鼓点</label>
+        <select id="beatSelect" class="ctrl-select small-select">
+          <option value="boombap">Boom Bap</option>
+          <option value="trap">Trap 808</option>
+          <option value="metro">纯节拍器</option>
+          <option value="off">静音</option>
+        </select>
+        <label class="btn btn-ghost file-btn" id="sampleLabelBtn" title="导入你自己的 Scratch Tool 音频（.wav/.mp3）">
+          🎵 导入采样
+          <input type="file" id="sampleFileInput" accept="audio/*" hidden />
+        </label>
+        <button class="btn btn-ghost" id="btnClearSample" title="清除自定义采样，恢复内置 Ahhh 合成音色" style="display: none;">
+          ✕ 恢复默认音色
+        </button>
+      </div>
+    </footer>
+
+    <!-- 右侧抽屉：Rane One / MIDI 设置与原始监视器 -->
+    <aside class="drawer" id="midiDrawer">
+      <div class="drawer-header">
+        <h2>🎛️ Rane One / MIDI 硬件配置</h2>
+        <button class="btn-close" id="btnCloseMidi">✕</button>
+      </div>
+
+      <div class="drawer-body">
+        <div class="mac-tip">
+          <strong>🍎 macOS + Serato / djay 提示：</strong><br />
+          macOS 的 CoreMIDI 支持多软件共享，你可以<strong>同时开着 Serato / djay 和本网页</strong>。请确保 Rane One 面板上的 Deck 输入拨档拨在 <code>USB A / B</code>，并使用 <strong>Chrome / Edge</strong> 打开本页面。
+        </div>
+
+        <section class="card">
+          <h3>1. 选择 MIDI 输入设备</h3>
+          <div class="row-inline">
+            <select id="midiInputSelect" class="ctrl-select full-width">
+              <option value="">正在扫描 MIDI 设备...</option>
+            </select>
+            <button class="btn btn-ghost" id="btnRefreshMidi">刷新</button>
+          </div>
+          <p class="help-text" id="midiSupportNote">支持 Web MIDI API。连接 Rane One 后如未自动显示请点刷新。</p>
+        </section>
+
+        <section class="card">
+          <h3>2. 一键绑定横推（Crossfader）</h3>
+          <div class="learn-row">
+            <button class="btn btn-accent" id="btnLearnFader">🎯 学习横推（动一下横推）</button>
+            <span class="mapping-info" id="faderMappingInfo">未绑定（可用空格/J/K）</span>
+          </div>
+          <div class="setting-row">
+            <label>
+              <input type="checkbox" id="chkHamster" />
+              Hamster 反转模式（横推方向反转）
+            </label>
+          </div>
+          <div class="setting-row">
+            <label for="cutInSlider">Cut-In 切入阈值：<strong id="cutInVal">12%</strong></label>
+            <input type="range" id="cutInSlider" min="2" max="45" value="12" />
+          </div>
+          <div class="setting-row">
+            <label for="faderSideSelect">出声侧（练习通道）</label>
+            <select id="faderSideSelect" class="ctrl-select">
+              <option value="right">右侧唱盘（推向左边关音，右边开音）</option>
+              <option value="left">左侧唱盘（推向右边关音，左边开音）</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="card">
+          <h3>3. 一键绑定转盘（Platter / Jog）</h3>
+          <div class="learn-row">
+            <button class="btn btn-accent" id="btnLearnPlatter">🎯 学习转盘（来回搓一下）</button>
+            <span class="mapping-info" id="platterMappingInfo">未绑定（可用鼠标拖动）</span>
+          </div>
+          <div class="setting-row">
+            <label for="platterModeSelect">转盘编码格式</label>
+            <select id="platterModeSelect" class="ctrl-select">
+              <option value="auto">自动识别（推荐）</option>
+              <option value="rel_64">相对值 64 偏移（>64 正转 / <64 反转）</option>
+              <option value="rel_2c">相对值 二进制补码（1..63 正 / 127..65 反）</option>
+              <option value="abs">绝对位置（0..127 / 14-bit）</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <label for="platterSensSlider">搓盘灵敏度：<strong id="platterSensVal">1.0x</strong></label>
+            <input type="range" id="platterSensSlider" min="0.2" max="3.0" value="1.0" step="0.1" />
+          </div>
+          <div class="setting-row">
+            <label>
+              <input type="checkbox" id="chkPlatterInvert" />
+              反转转盘方向
+            </label>
+          </div>
+          <p class="help-text">
+            注：Rane One 电动转盘若在部分固件下未直接输出标准 MIDI CC，你仍可先用本工具完美练 <strong>Fader 横推专项</strong>，同时在下方原始监视器查看盘片是否有 MIDI 报文发出。
+          </p>
+        </section>
+
+        <section class="card">
+          <h3>4. 视觉与判定微调</h3>
+          <div class="setting-row">
+            <label for="scrollSpeedSlider">谱面流速：<strong id="scrollSpeedVal">1.0x</strong></label>
+            <input type="range" id="scrollSpeedSlider" min="0.6" max="2.0" value="1.0" step="0.1" />
+          </div>
+          <div class="setting-row">
+            <label for="judgeWindowSlider">判定宽松度：<strong id="judgeWindowVal">±75ms</strong></label>
+            <input type="range" id="judgeWindowSlider" min="35" max="130" value="75" step="5" />
+          </div>
+          <div class="row-inline">
+            <button class="btn btn-ghost" id="btnResetMapping">恢复默认配置</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="row-inline space-between">
+            <h3>5. 实时 MIDI 原始监视器</h3>
+            <button class="btn-mini" id="btnClearLog">清空</button>
+          </div>
+          <pre class="midi-log" id="midiLog">等待 MIDI 信号...</pre>
+        </section>
+      </div>
+    </aside>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
