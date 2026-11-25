@@ -129,6 +129,11 @@
           <option value="metro">纯节拍器</option>
           <option value="off">静音</option>
         </select>
+        <select id="soundPresetSelect" class="ctrl-select small-select" title="切换内置搓盘音色">
+          <option value="ahh">🎤 经典 Ahh</option>
+          <option value="fresh">💿 Fresh 颗粒</option>
+          <option value="horn">🎺 Funk 铜管</option>
+        </select>
         <label class="btn btn-ghost file-btn" id="sampleLabelBtn" title="导入你自己的 Scratch Tool 音频（.wav/.mp3）">
           🎵 导入采样
           <input type="file" id="sampleFileInput" accept="audio/*" hidden />
@@ -176,8 +181,8 @@
             </label>
           </div>
           <div class="setting-row">
-            <label for="cutInSlider">Cut-In 切入阈值：<strong id="cutInVal">12%</strong></label>
-            <input type="range" id="cutInSlider" min="2" max="45" value="12" />
+            <label for="cutInSlider">Cut-In 切入阈值：<strong id="cutInVal">18%</strong></label>
+            <input type="range" id="cutInSlider" min="2" max="45" value="18" />
           </div>
           <div class="setting-row">
             <label for="faderSideSelect">出声侧（练习通道）</label>
@@ -204,8 +209,8 @@
             </select>
           </div>
           <div class="setting-row">
-            <label for="platterSensSlider">搓盘灵敏度：<strong id="platterSensVal">1.0x</strong></label>
-            <input type="range" id="platterSensSlider" min="0.2" max="3.0" value="1.0" step="0.1" />
+            <label for="platterSensSlider">搓盘灵敏度：<strong id="platterSensVal">0.80x</strong></label>
+            <input type="range" id="platterSensSlider" min="0.1" max="2.5" value="0.8" step="0.05" />
           </div>
           <div class="setting-row">
             <label>

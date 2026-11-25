@@ -13,9 +13,9 @@ const DEFAULT_CONFIG = {
   platter: null, // { type: 'cc' | 'pb', channel, cc }
   hamster: false,
   faderSide: 'right', // 'right' | 'left'
-  cutIn: 0.12, // 0.02 .. 0.45
+  cutIn: 0.18, // 0.02 .. 0.45（配合施密特迟滞防抖）
   platterMode: 'auto', // 'auto' | 'rel_64' | 'rel_2c' | 'abs'
-  platterSens: 1.0,
+  platterSens: 0.8,
   platterInvert: false,
   scrollSpeed: 1.0, // 0.6 .. 2.0
   judgeWindowMs: 75 // 35 .. 130
@@ -41,7 +41,9 @@ export class MidiEngine {
     // 实时硬件状态
     this.faderRaw = 0; // 0..1（经过侧向/Hamster映射后：0=关音，1=全开）
     this.faderOpen = false;
-    this.platterPos = 0; // 归一化搓盘位移，范围约 [-1.2, 1.2]，中心/基准为 0
+    this._lastFaderEdgeTime = 0;
+    this.platterPos = 0; // 平滑后的归一化搓盘位移，范围约 [-1.1, 1.1]，基准为 0
+    this._platterTargetPos = 0; // 目标位移（由增量驱动，每帧平滑跟随）
     this.platterVel = 0; // 瞬时速度
     this._lastAbsPlatter = null;
     this._detectedPlatterMode = null;
@@ -218,7 +220,7 @@ export class MidiEngine {
         this.processPlatterCc(data2);
       } else if (p.type === 'pb' && msgType === 0xe0 && channel === p.channel) {
         const val = ((data2 << 7) | data1) - 8192;
-        this.applyPlatterDelta((val / 8192) * 0.25);
+        this.applyPlatterDelta((val / 8192) * 0.055);
       }
     }
   }
@@ -313,18 +315,39 @@ export class MidiEngine {
 
   /**
    * 外部输入（MIDI 或 键盘模拟）统一入口
+   * 加入施密特触发器迟滞（Hysteresis）与 24ms 防抖，杜绝横推临界点微颤误触发
    */
   setFaderLevel(level) {
     const clamped = Math.max(0, Math.min(1, level));
     const prevOpen = this.faderOpen;
     this.faderRaw = clamped;
-    this.faderOpen = clamped >= this.config.cutIn;
 
-    // 触发「关 -> 开」的上升沿事件（作为切音判定触发点）
-    if (!prevOpen && this.faderOpen) {
-      this.callbacks.onFaderCutOn?.(performance.now(), clamped);
-    } else if (prevOpen && !this.faderOpen) {
-      this.callbacks.onFaderCutOff?.(performance.now(), clamped);
+    const cutIn = this.config.cutIn;
+    const hysteresis = 0.04;
+    const cutOut = Math.max(0.01, cutIn - hysteresis);
+
+    let nextOpen = prevOpen;
+    if (!prevOpen && clamped >= cutIn) {
+      nextOpen = true;
+    } else if (prevOpen && clamped <= cutOut) {
+      nextOpen = false;
+    }
+
+    const now = performance.now();
+    if (nextOpen !== prevOpen) {
+      // 防抖冷却（键盘瞬间点按 0/1 放行，仅过滤传感器微颤）
+      const isExtremeJump = clamped <= 0.01 || clamped >= 0.99;
+      if (!isExtremeJump && now - this._lastFaderEdgeTime < 24) {
+        return;
+      }
+      this._lastFaderEdgeTime = now;
+      this.faderOpen = nextOpen;
+
+      if (nextOpen) {
+        this.callbacks.onFaderCutOn?.(now, clamped);
+      } else {
+        this.callbacks.onFaderCutOff?.(now, clamped);
+      }
     }
   }
 
@@ -354,16 +377,16 @@ export class MidiEngine {
 
     let delta = 0;
     if (mode === 'rel_64') {
-      delta = (val - 64) * 0.045;
+      delta = (val - 64) * 0.011;
     } else if (mode === 'rel_2c') {
       const signed = val < 64 ? val : val - 128;
-      delta = signed * 0.045;
+      delta = signed * 0.011;
     } else if (mode === 'abs') {
       if (this._lastAbsPlatter !== null) {
         let diff = val - this._lastAbsPlatter;
         if (diff > 64) diff -= 128;
         if (diff < -64) diff += 128;
-        delta = diff * 0.035;
+        delta = diff * 0.009;
       }
       this._lastAbsPlatter = val;
     }
@@ -377,16 +400,25 @@ export class MidiEngine {
   applyPlatterDelta(rawDelta) {
     const sign = this.config.platterInvert ? -1 : 1;
     const d = rawDelta * this.config.platterSens * sign;
-    this.platterPos = Math.max(-1.1, Math.min(1.1, this.platterPos + d));
-    this.platterVel = Math.max(-2.5, Math.min(2.5, this.platterVel * 0.4 + d * 18));
+    this._platterTargetPos = Math.max(-1.05, Math.min(1.05, this._platterTargetPos + d));
+    this.platterVel = Math.max(-2.2, Math.min(2.2, this.platterVel * 0.55 + d * 6.5));
     this.callbacks.onPlatterMove?.(this.platterPos, this.platterVel, d);
   }
 
+  resetPlatter() {
+    this.platterPos = 0;
+    this._platterTargetPos = 0;
+    this.platterVel = 0;
+  }
+
   /**
-   * 每帧衰减瞬时速度（用于 UI 表与音频停止）
+   * 每帧平滑位移与衰减瞬时速度（让曲线圆润丝滑、符合真黑胶搓盘惯性）
    */
   tickDecay(dt) {
-    const decay = Math.exp(-dt * 14);
+    const posLerp = 1 - Math.exp(-dt * 28);
+    this.platterPos += (this._platterTargetPos - this.platterPos) * posLerp;
+
+    const decay = Math.exp(-dt * 11);
     this.platterVel *= decay;
     if (Math.abs(this.platterVel) < 0.005) {
       this.platterVel = 0;

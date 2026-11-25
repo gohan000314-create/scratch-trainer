@@ -38,6 +38,7 @@ const el = {
   btnBpmDown: document.getElementById('btnBpmDown'),
   btnBpmUp: document.getElementById('btnBpmUp'),
   beatSelect: document.getElementById('beatSelect'),
+  soundPresetSelect: document.getElementById('soundPresetSelect'),
   sampleFileInput: document.getElementById('sampleFileInput'),
   btnClearSample: document.getElementById('btnClearSample'),
   btnCompanionMode: document.getElementById('btnCompanionMode'),
@@ -159,16 +160,12 @@ const midi = new MidiEngine({
     if (state.isPlaying) {
       renderer.handleFaderCutTrigger(state.currentBeat, state.bpm, state.mode, state.pattern, 'open');
     }
-    if (audio.customBuffer && state.mode !== 'platter') {
-      audio.triggerCustomSampleCut(false);
-    }
+    audio.ensureContext();
+    audio.triggerScratchCut(state.mode);
   },
   onFaderCutOff() {
     if (state.isPlaying) {
       renderer.handleFaderCutTrigger(state.currentBeat, state.bpm, state.mode, state.pattern, 'close');
-    }
-    if (audio.customBuffer && state.mode !== 'platter') {
-      audio.stopCustomSample();
     }
   }
 });
@@ -202,7 +199,7 @@ function syncConfigToUI(cfg) {
   el.faderSideSelect.value = cfg.faderSide;
   el.platterModeSelect.value = cfg.platterMode;
   el.platterSensSlider.value = cfg.platterSens;
-  el.platterSensVal.textContent = `${cfg.platterSens.toFixed(1)}x`;
+  el.platterSensVal.textContent = `${cfg.platterSens.toFixed(2)}x`;
   el.chkPlatterInvert.checked = cfg.platterInvert;
 
   // 同步视觉与判定参数到 UI 与渲染器
@@ -313,8 +310,7 @@ function resetSession() {
   state.currentBeat = -1.5;
   audio.resetBeatClock();
   renderer.reset();
-  midi.platterPos = 0;
-  midi.platterVel = 0;
+  midi.resetPlatter();
 }
 
 // ---- 事件绑定 ----
@@ -337,6 +333,11 @@ el.btnBpmUp.addEventListener('click', () => setBpm(state.bpm + 1));
 
 el.beatSelect.addEventListener('change', (e) => {
   audio.setBeatStyle(e.target.value);
+});
+
+el.soundPresetSelect.addEventListener('change', (e) => {
+  audio.ensureContext();
+  audio.setSoundPreset(e.target.value);
 });
 
 el.sampleFileInput.addEventListener('change', async (e) => {
@@ -408,7 +409,7 @@ el.platterModeSelect.addEventListener('change', (e) => {
 el.platterSensSlider.addEventListener('input', (e) => {
   const v = Number(e.target.value);
   midi.config.platterSens = v;
-  el.platterSensVal.textContent = `${v.toFixed(1)}x`;
+  el.platterSensVal.textContent = `${v.toFixed(2)}x`;
   midi.saveConfig();
 });
 el.chkPlatterInvert.addEventListener('change', (e) => {
@@ -483,7 +484,7 @@ el.canvas.addEventListener('pointermove', (e) => {
   if (!isDraggingPlatter) return;
   const dx = e.clientX - lastMouseX;
   lastMouseX = e.clientX;
-  midi.applyPlatterDelta(dx / 150);
+  midi.applyPlatterDelta(dx / 260);
 });
 
 el.canvas.addEventListener('pointerup', () => {
@@ -495,7 +496,7 @@ el.canvas.addEventListener(
   (e) => {
     e.preventDefault();
     audio.ensureContext();
-    midi.applyPlatterDelta(-e.deltaY / 420);
+    midi.applyPlatterDelta(-e.deltaY / 750);
   },
   { passive: false }
 );
