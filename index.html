@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Scratch Trainer — 搓盘实时可视化与音游训练器 (Rane One 适配版)</title>
+  <title>Scratch Trainer — 搓盘实时可视化与音游训练器 (全系 DJ 控制器 MIDI 适配)</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div id="app">
-    <!-- 顶部状态栏（复刻视频顶部胶囊风格） -->
+    <!-- 顶部状态栏 -->
     <header class="topbar">
       <div class="topbar-left">
         <span class="brand-dot" id="midiStatusDot" title="MIDI 连接状态"></span>
@@ -16,7 +16,7 @@
         <span class="midi-badge" id="midiDeviceLabel">未连接 MIDI（可用键盘/鼠标体验）</span>
       </div>
 
-      <!-- 中央胶囊：复刻视频 00:11 顶部的 Baby Rhythm • 100 BPM / Platter -->
+      <!-- 中央胶囊 -->
       <div class="session-pill">
         <div class="pill-row">
           <span class="pill-tag" id="modeTag">FADER</span>
@@ -24,14 +24,18 @@
           <span class="pill-sep">•</span>
           <span class="pill-bpm" id="bpmDisplay">100 BPM</span>
         </div>
-        <div class="pill-sub" id="modeSubtitle">Fader</div>
+        <div class="pill-sub" id="modeSubtitle">Deck R • Fader</div>
       </div>
 
       <div class="topbar-right">
-        <button class="btn btn-ghost" id="btnCompanionMode" title="开启后静音内置伴奏和搓盘音，专心配合 Serato / djay 使用">
-          🎧 <span class="hide-narrow">Serato/djay </span>伴随: <strong id="companionState">关</strong>
+        <div class="deck-switch" id="deckSelector" title="切换左盘 / 右盘（同步镜像整个软件视图与横推方向）">
+          <button class="deck-btn" data-deck="left">Deck L</button>
+          <button class="deck-btn active" data-deck="right">Deck R</button>
+        </div>
+        <button class="btn btn-ghost" id="btnCompanionMode" title="开启后静音内置伴奏和搓盘音，专心配合 Serato / djay / Rekordbox 使用">
+          🎧 <span class="hide-narrow">伴随: </span><strong id="companionState">关</strong>
         </button>
-        <button class="btn btn-accent" id="btnOpenMidi">🎛️ <span class="hide-narrow">Rane One / </span>MIDI</button>
+        <button class="btn btn-accent" id="btnOpenMidi">🎛️ <span class="hide-narrow">DJ </span>MIDI</button>
       </div>
     </header>
 
@@ -83,7 +87,7 @@
 
       <!-- 无硬件操作提示浮层 -->
       <div class="hint-bar" id="hintBar">
-        💡 无设备也能试玩：按 <kbd>Space</kbd> 或 <kbd>J</kbd>/<kbd>K</kbd> 切横推，在画布上<strong>左右拖动鼠标 / 滚轮</strong>模拟搓盘；连接 Rane One 后点右上角一键映射。
+        💡 无设备也能试玩：按 <kbd>Space</kbd> 或 <kbd>J</kbd>/<kbd>K</kbd> 切横推，在画布上<strong>左右拖动鼠标 / 滚轮</strong>模拟搓盘；右上角支持 <strong>Deck L / R</strong> 镜像切换与任意 DJ 控制器 MIDI 绑定。
       </div>
     </main>
 
@@ -130,9 +134,11 @@
           <option value="off">静音</option>
         </select>
         <select id="soundPresetSelect" class="ctrl-select small-select" title="切换内置搓盘音色">
-          <option value="ahh">🎤 经典 Ahh</option>
-          <option value="fresh">💿 Fresh 颗粒</option>
-          <option value="horn">🎺 Funk 铜管</option>
+          <option value="rhodes">🎹 Lo-Fi 电钢</option>
+          <option value="bass">🎸 温暖 808 贝斯</option>
+          <option value="flute">✨ 黑胶长笛</option>
+          <option value="perc">🥁 清脆颗粒</option>
+          <option value="mute">🔇 仅听鼓点</option>
         </select>
         <label class="btn btn-ghost file-btn" id="sampleLabelBtn" title="导入你自己的 Scratch Tool 音频（.wav/.mp3）">
           🎵 导入采样
@@ -144,17 +150,17 @@
       </div>
     </footer>
 
-    <!-- 右侧抽屉：Rane One / MIDI 设置与原始监视器 -->
+    <!-- 右侧抽屉：通用 DJ 控制器 / 碟机 MIDI 设置与原始监视器 -->
     <aside class="drawer" id="midiDrawer">
       <div class="drawer-header">
-        <h2>🎛️ Rane One / MIDI 硬件配置</h2>
+        <h2>🎛️ DJ 控制器 / 碟机 MIDI 配置</h2>
         <button class="btn-close" id="btnCloseMidi">✕</button>
       </div>
 
       <div class="drawer-body">
         <div class="mac-tip">
-          <strong>🍎 macOS + Serato / djay 提示：</strong><br />
-          macOS 的 CoreMIDI 支持多软件共享，你可以<strong>同时开着 Serato / djay 和本网页</strong>。请确保 Rane One 面板上的 Deck 输入拨档拨在 <code>USB A / B</code>，并使用 <strong>Chrome / Edge</strong> 打开本页面。
+          <strong>🎧 通用 DJ 硬件 & Serato / djay / Rekordbox 提示：</strong><br />
+          支持 <strong>Pioneer / AlphaTheta (DDJ/CDJ/DJM)、Rane、Denon、Numark、Reloop、Traktor、Hercules、Phase</strong> 及任意标准 USB-MIDI 碟机与分体机。请使用<strong>正式版 Chrome / Edge</strong> 打开，macOS 可与 DJ 软件同时运行。
         </div>
 
         <section class="card">
@@ -165,7 +171,7 @@
             </select>
             <button class="btn btn-ghost" id="btnRefreshMidi">刷新</button>
           </div>
-          <p class="help-text" id="midiSupportNote">支持 Web MIDI API。连接 Rane One 后如未自动显示请点刷新。</p>
+          <p class="help-text" id="midiSupportNote">默认同时监听全部已连接设备，支持混音台横推 + 独立转盘/CDJ 分体接入。</p>
         </section>
 
         <section class="card">
@@ -194,17 +200,18 @@
         </section>
 
         <section class="card">
-          <h3>3. 一键绑定转盘（Platter / Jog）</h3>
+          <h3>3. 一键绑定当前盘转盘（<span id="platterDeckTitle">Deck R</span>）</h3>
           <div class="learn-row">
-            <button class="btn btn-accent" id="btnLearnPlatter">🎯 学习转盘（来回搓一下）</button>
+            <button class="btn btn-accent" id="btnLearnPlatter">🎯 学习当前盘转盘（来回搓一下）</button>
             <span class="mapping-info" id="platterMappingInfo">未绑定（可用鼠标拖动）</span>
           </div>
           <div class="setting-row">
             <label for="platterModeSelect">转盘编码格式</label>
             <select id="platterModeSelect" class="ctrl-select">
-              <option value="auto">自动识别（推荐）</option>
-              <option value="rel_64">相对值 64 偏移（>64 正转 / <64 反转）</option>
-              <option value="rel_2c">相对值 二进制补码（1..63 正 / 127..65 反）</option>
+              <option value="auto">自动识别（推荐，支持大多数碟机）</option>
+              <option value="rel_64">相对值 64 偏移（Pioneer / Serato 常见）</option>
+              <option value="rel_2c">相对值 二进制补码（Rane / Denon / Numark 常见）</option>
+              <option value="rel_signbit">相对值 符号位（Traktor / Reloop 部分机型）</option>
               <option value="abs">绝对位置（0..127 / 14-bit）</option>
             </select>
           </div>
@@ -219,7 +226,7 @@
             </label>
           </div>
           <p class="help-text">
-            注：Rane One 电动转盘若在部分固件下未直接输出标准 MIDI CC，你仍可先用本工具完美练 <strong>Fader 横推专项</strong>，同时在下方原始监视器查看盘片是否有 MIDI 报文发出。
+            提示：左盘（Deck L）与右盘（Deck R）的转盘映射会<strong>分开保存</strong>，顶部切换左右盘时自动生效；若某款电动转盘未发标准 MIDI，可在下方原始监视器查看信号。
           </p>
         </section>
 

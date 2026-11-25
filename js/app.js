@@ -1,11 +1,14 @@
 import { PATTERNS } from './patterns.js';
-import { MidiEngine } from './midi.js';
+import { MidiEngine, ALL_INPUTS_ID } from './midi.js';
 import { AudioEngine } from './audio.js';
 import { StageRenderer } from './renderer.js';
 
 // ---- DOM 元素索引 ----
 const el = {
+  app: document.getElementById('app'),
   canvas: document.getElementById('stageCanvas'),
+  deckSelector: document.getElementById('deckSelector'),
+  platterDeckTitle: document.getElementById('platterDeckTitle'),
   midiStatusDot: document.getElementById('midiStatusDot'),
   midiDeviceLabel: document.getElementById('midiDeviceLabel'),
   modeTag: document.getElementById('modeTag'),
@@ -110,38 +113,48 @@ const midi = new MidiEngine({
     el.midiSupportNote.textContent = msg;
     el.midiSupportNote.style.color = '#ff7b93';
   },
-  onDevicesChanged(inputs, active) {
+  onDevicesChanged(inputs, active, selectedId) {
     el.midiInputSelect.innerHTML = '';
     if (inputs.length === 0) {
       const opt = document.createElement('option');
       opt.value = '';
-      opt.textContent = '未检测到 MIDI 控制器（请插上 Rane One 后点刷新）';
+      opt.textContent = '未检测到 MIDI 控制器（请插上碟机/混音台后点刷新）';
       el.midiInputSelect.appendChild(opt);
       el.midiStatusDot.classList.remove('connected');
       el.midiDeviceLabel.textContent = '未连接 MIDI（可用键盘/鼠标体验）';
       return;
     }
 
+    // 首位增加「全部已连接设备」选项，支持混音台+独立转盘分体接入
+    const allOpt = document.createElement('option');
+    allOpt.value = ALL_INPUTS_ID;
+    allOpt.textContent = `全部已连接 MIDI 设备（${inputs.length} 台，支持分体机）`;
+    if (selectedId === ALL_INPUTS_ID) allOpt.selected = true;
+    el.midiInputSelect.appendChild(allOpt);
+
     for (const inp of inputs) {
       const opt = document.createElement('option');
       opt.value = inp.id;
       opt.textContent = inp.name || `MIDI 设备 (${inp.id})`;
-      if (active && inp.id === active.id) opt.selected = true;
+      if (selectedId === inp.id) opt.selected = true;
       el.midiInputSelect.appendChild(opt);
     }
 
-    if (active) {
-      el.midiStatusDot.classList.add('connected');
+    el.midiStatusDot.classList.add('connected');
+    if (selectedId === ALL_INPUTS_ID && inputs.length > 1) {
+      el.midiDeviceLabel.textContent = `已连接：${inputs.length} 台 MIDI 设备`;
+    } else if (active) {
       el.midiDeviceLabel.textContent = `已连接：${active.name}`;
     }
   },
   onLearnState(target) {
+    const deckLabel = midi.config.activeDeck === 'left' ? 'Deck L' : 'Deck R';
     el.btnLearnFader.classList.toggle('learning', target === 'fader');
     el.btnLearnPlatter.classList.toggle('learning', target === 'platter');
     el.btnLearnFader.textContent =
       target === 'fader' ? '⏳ 请来回推一下横推...' : '🎯 学习横推（动一下横推）';
     el.btnLearnPlatter.textContent =
-      target === 'platter' ? '⏳ 请来回搓一下转盘...' : '🎯 学习转盘（来回搓一下）';
+      target === 'platter' ? `⏳ 请来回搓一下 ${deckLabel} 转盘...` : `🎯 学习 ${deckLabel} 转盘（来回搓一下）`;
   },
   onConfigChanged(cfg) {
     syncConfigToUI(cfg);
@@ -170,32 +183,58 @@ const midi = new MidiEngine({
   }
 });
 
-// ---- 同步设置面板 UI ----
+// ---- 同步设置面板与左右 Deck 视图 ----
+function updateCutInLineUI(cutInPct, isLeft) {
+  if (isLeft) {
+    el.faderCutLine.style.left = 'auto';
+    el.faderCutLine.style.right = `${cutInPct}%`;
+  } else {
+    el.faderCutLine.style.right = 'auto';
+    el.faderCutLine.style.left = `${cutInPct}%`;
+  }
+}
+
 function syncConfigToUI(cfg) {
+  const isLeft = cfg.activeDeck === 'left';
+  const deckLabel = isLeft ? 'Deck L' : 'Deck R';
+
+  el.app.classList.toggle('deck-left', isLeft);
+  el.deckSelector.querySelectorAll('.deck-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.deck === cfg.activeDeck);
+  });
+  el.platterDeckTitle.textContent = deckLabel;
+  if (!midi.learningTarget) {
+    el.btnLearnPlatter.textContent = `🎯 学习 ${deckLabel} 转盘（来回搓一下）`;
+  }
+
   if (cfg.fader) {
+    const dev = cfg.fader.deviceName ? `${cfg.fader.deviceName} · ` : '';
     const detail =
       cfg.fader.type === 'cc'
-        ? `已绑定: CH${cfg.fader.channel} CC#${cfg.fader.cc}${cfg.fader.lsbCc !== null ? ` (+LSB#${cfg.fader.lsbCc} 14-bit)` : ''}`
-        : `已绑定: CH${cfg.fader.channel} PitchBend`;
+        ? `已绑定: ${dev}CH${cfg.fader.channel} CC#${cfg.fader.cc}${cfg.fader.lsbCc !== null ? ` (+LSB#${cfg.fader.lsbCc} 14-bit)` : ''}`
+        : `已绑定: ${dev}CH${cfg.fader.channel} PitchBend`;
     el.faderMappingInfo.textContent = detail;
   } else {
     el.faderMappingInfo.textContent = '未绑定（可用空格 / J / K 模拟）';
   }
 
-  if (cfg.platter) {
+  const activePlatter = midi.getActivePlatterMapping();
+  if (activePlatter) {
+    const dev = activePlatter.deviceName ? `${activePlatter.deviceName} · ` : '';
     const detail =
-      cfg.platter.type === 'cc'
-        ? `已绑定: CH${cfg.platter.channel} CC#${cfg.platter.cc}`
-        : `已绑定: CH${cfg.platter.channel} PitchBend`;
+      activePlatter.type === 'cc'
+        ? `已绑定 (${deckLabel}): ${dev}CH${activePlatter.channel} CC#${activePlatter.cc}${activePlatter.lsbCc !== null && activePlatter.lsbCc !== undefined ? ` (+LSB#${activePlatter.lsbCc} 14-bit)` : ''}`
+        : `已绑定 (${deckLabel}): ${dev}CH${activePlatter.channel} PitchBend`;
     el.platterMappingInfo.textContent = detail;
   } else {
-    el.platterMappingInfo.textContent = '未绑定（可在画布左右拖动鼠标 / 滚轮模拟）';
+    el.platterMappingInfo.textContent = `${deckLabel} 未绑定（可在画布左右拖动鼠标 / 滚轮模拟）`;
   }
 
+  const cutInPct = Math.round(cfg.cutIn * 100);
   el.chkHamster.checked = cfg.hamster;
-  el.cutInSlider.value = Math.round(cfg.cutIn * 100);
-  el.cutInVal.textContent = `${Math.round(cfg.cutIn * 100)}%`;
-  el.faderCutLine.style.left = `${Math.round(cfg.cutIn * 100)}%`;
+  el.cutInSlider.value = cutInPct;
+  el.cutInVal.textContent = `${cutInPct}%`;
+  updateCutInLineUI(cutInPct, isLeft);
   el.faderSideSelect.value = cfg.faderSide;
   el.platterModeSelect.value = cfg.platterMode;
   el.platterSensSlider.value = cfg.platterSens;
@@ -211,6 +250,8 @@ function syncConfigToUI(cfg) {
   el.scrollSpeedVal.textContent = `${scrollSpeed.toFixed(1)}x`;
   el.judgeWindowSlider.value = judgeWindowMs;
   el.judgeWindowVal.textContent = `±${judgeWindowMs}ms`;
+
+  updateHeaderPill();
 }
 
 // ---- 模式与谱面切换 ----
@@ -289,9 +330,10 @@ function setBpm(bpm) {
 
 function updateHeaderPill() {
   const meta = MODE_META[state.mode];
+  const deckLabel = midi.config.activeDeck === 'left' ? 'Deck L' : 'Deck R';
   el.modeTag.textContent = meta.tag;
   el.modeTag.className = `pill-tag ${meta.cls}`;
-  el.modeSubtitle.textContent = meta.sub;
+  el.modeSubtitle.textContent = `${deckLabel} • ${meta.sub}`;
   el.patternTitle.textContent = state.pattern?.shortTitle || '';
   el.bpmDisplay.textContent = `${state.bpm} BPM`;
 }
@@ -314,6 +356,12 @@ function resetSession() {
 }
 
 // ---- 事件绑定 ----
+el.deckSelector.addEventListener('click', (e) => {
+  const btn = e.target.closest('.deck-btn');
+  if (!btn) return;
+  midi.setActiveDeck(btn.dataset.deck);
+});
+
 el.modeSelector.addEventListener('click', (e) => {
   const btn = e.target.closest('.seg-btn');
   if (!btn) return;
@@ -392,10 +440,10 @@ el.chkHamster.addEventListener('change', (e) => {
   midi.saveConfig();
 });
 el.cutInSlider.addEventListener('input', (e) => {
-  const v = Number(e.target.value) / 100;
-  midi.config.cutIn = v;
-  el.cutInVal.textContent = `${e.target.value}%`;
-  el.faderCutLine.style.left = `${e.target.value}%`;
+  const pct = Number(e.target.value);
+  midi.config.cutIn = pct / 100;
+  el.cutInVal.textContent = `${pct}%`;
+  updateCutInLineUI(pct, midi.config.activeDeck === 'left');
   midi.saveConfig();
 });
 el.faderSideSelect.addEventListener('change', (e) => {
@@ -555,7 +603,8 @@ function loop(now) {
     faderRaw: midi.faderRaw,
     faderOpen: midi.faderOpen,
     platterPos: midi.platterPos,
-    isPlaying: state.isPlaying
+    isPlaying: state.isPlaying,
+    deck: midi.config.activeDeck
   });
 
   requestAnimationFrame(loop);

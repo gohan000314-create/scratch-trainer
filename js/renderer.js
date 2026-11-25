@@ -275,7 +275,7 @@ export class StageRenderer {
   /**
    * 主绘制函数
    */
-  render({ currentBeat, bpm, mode, pattern, faderRaw, faderOpen, platterPos, isPlaying }) {
+  render({ currentBeat, bpm, mode, pattern, faderRaw, faderOpen, platterPos, isPlaying, deck = 'right' }) {
     const ctx = this.ctx;
     const W = this.width;
     const H = this.height;
@@ -285,17 +285,17 @@ export class StageRenderer {
     ctx.clearRect(0, 0, W, H);
 
     // 2. 绘制滚动节拍网格
-    this.drawBeatGrid(ctx, W, H, currentBeat, pattern);
+    this.drawBeatGrid(ctx, W, H, currentBeat, pattern, deck);
 
-    // 3. 根据模式绘制主视觉内容
+    // 3. 根据模式绘制主视觉内容（支持左盘 / 右盘整屏镜像）
     if (mode === 'fader') {
-      this.drawFaderMode(ctx, W, H, judgeY, currentBeat, bpm, pattern, faderRaw, faderOpen);
+      this.drawFaderMode(ctx, W, H, judgeY, currentBeat, bpm, pattern, faderRaw, faderOpen, deck);
     } else if (mode === 'platter') {
-      this.drawPlatterMode(ctx, W, H, judgeY, currentBeat, pattern, platterPos);
+      this.drawPlatterMode(ctx, W, H, judgeY, currentBeat, pattern, platterPos, deck);
     } else if (mode === 'combo') {
-      this.drawComboMode(ctx, W, H, judgeY, currentBeat, bpm, pattern, faderRaw, faderOpen, platterPos);
+      this.drawComboMode(ctx, W, H, judgeY, currentBeat, bpm, pattern, faderRaw, faderOpen, platterPos, deck);
     } else {
-      this.drawFreeMode(ctx, W, H, judgeY, currentBeat, faderRaw, faderOpen, platterPos);
+      this.drawFreeMode(ctx, W, H, judgeY, currentBeat, faderRaw, faderOpen, platterPos, deck);
     }
 
     // 4. 命中判定线闪光特效
@@ -318,7 +318,7 @@ export class StageRenderer {
     }
   }
 
-  drawBeatGrid(ctx, W, H, currentBeat, pattern) {
+  drawBeatGrid(ctx, W, H, currentBeat, pattern, deck = 'right') {
     const ppb = this.getPixelsPerBeat();
     const loopBeats = pattern?.loopBeats || 4;
     const sub = pattern?.subdivision || 2;
@@ -352,26 +352,35 @@ export class StageRenderer {
       }
       ctx.stroke();
 
-      // 在左侧显示小节序号
+      // 显示小节序号（右盘靠左、左盘靠右）
       if (isBar && rounded >= 0) {
         const barNum = Math.round(rounded / loopBeats) + 1;
         ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
         ctx.font = '600 11px monospace';
-        ctx.textAlign = 'left';
-        ctx.fillText(`BAR ${barNum}`, 16, y - 5);
+        if (deck === 'left') {
+          ctx.textAlign = 'right';
+          ctx.fillText(`BAR ${barNum}`, W - 16, y - 5);
+        } else {
+          ctx.textAlign = 'left';
+          ctx.fillText(`BAR ${barNum}`, 16, y - 5);
+        }
       }
     }
     ctx.restore();
   }
 
   /**
-   * Fader 模式：1:1 复刻视频 00:00 - 00:09 效果
-   * 左侧基准轴 + 下落 `<` 标记 + 命中变绿 `X` + 右侧白色脉冲波形
+   * Fader 模式：支持左盘/右盘完整镜像
+   * 右盘：基准轴在左、向右开音、`<` 标记
+   * 左盘：基准轴在右、向左开音、`>` 标记
    */
-  drawFaderMode(ctx, W, H, judgeY, currentBeat, bpm, pattern, faderRaw, faderOpen) {
+  drawFaderMode(ctx, W, H, judgeY, currentBeat, bpm, pattern, faderRaw, faderOpen, deck = 'right') {
     const isNarrow = W < 460;
-    const baseX = isNarrow ? W * 0.22 : W * 0.36; // 垂直基准轴（横推关闭位）
-    const waveMaxW = isNarrow ? W * 0.64 : Math.min(W * 0.48, 360); // 横推全开时的波形振幅宽度
+    const isLeft = deck === 'left';
+    const dir = isLeft ? -1 : 1;
+    const rawBaseX = isNarrow ? W * 0.22 : W * 0.36;
+    const baseX = isLeft ? W - rawBaseX : rawBaseX;
+    const waveMaxW = isNarrow ? W * 0.64 : Math.min(W * 0.48, 360);
 
     // 1. 绘制垂直基准轴
     ctx.save();
@@ -391,7 +400,7 @@ export class StageRenderer {
         const y = this.beatToY(pt.beat, currentBeat);
         if (y < judgeY - 2) continue;
         if (y > H + 20) break;
-        const x = baseX + pt.fader * waveMaxW;
+        const x = baseX + dir * pt.fader * waveMaxW;
         if (!started) {
           ctx.moveTo(x, y);
           started = true;
@@ -408,7 +417,9 @@ export class StageRenderer {
     }
 
     // 3. 绘制水平发光判定线
-    const grad = ctx.createLinearGradient(baseX - 40, 0, baseX + waveMaxW + 80, 0);
+    const lineStart = baseX - dir * 40;
+    const lineEnd = baseX + dir * (waveMaxW + 80);
+    const grad = ctx.createLinearGradient(lineStart, 0, lineEnd, 0);
     grad.addColorStop(0, 'rgba(255, 255, 255, 0.08)');
     grad.addColorStop(0.15, 'rgba(255, 255, 255, 0.92)');
     grad.addColorStop(0.85, 'rgba(255, 255, 255, 0.72)');
@@ -418,38 +429,35 @@ export class StageRenderer {
     ctx.shadowColor = 'rgba(255, 255, 255, 0.65)';
     ctx.shadowBlur = 12;
     ctx.beginPath();
-    ctx.moveTo(baseX - 40, judgeY);
-    ctx.lineTo(baseX + waveMaxW + 80, judgeY);
+    ctx.moveTo(lineStart, judgeY);
+    ctx.lineTo(lineEnd, judgeY);
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    // 4. 绘制滚动的 `<` 切音标记与命中绿 `X`
+    // 4. 绘制滚动的 `<` / `>` 切音标记与命中绿 `X`
     const notes = this.syncFaderNotes(currentBeat, bpm, pattern, 'fader');
     for (const n of notes) {
       const y = this.beatToY(n.beat, currentBeat);
       if (y < -30 || y > H + 30) continue;
 
       if (n.status === 'pending') {
-        // 未来未命中的 `<` 标记（复刻视频精致的细白尖括号）
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.62)';
         ctx.lineWidth = 1.8;
         ctx.beginPath();
-        ctx.moveTo(baseX + 12, y - 10);
-        ctx.lineTo(baseX - 8, y);
-        ctx.lineTo(baseX + 12, y + 10);
+        ctx.moveTo(baseX + dir * 12, y - 10);
+        ctx.lineTo(baseX - dir * 8, y);
+        ctx.lineTo(baseX + dir * 12, y + 10);
         ctx.stroke();
       } else if (n.status === 'perfect' || n.status === 'good') {
-        // 命中：高亮发光绿色 X（复刻视频绿叉）
         const color = n.status === 'perfect' ? '#22e58b' : '#f5b942';
         this.drawCrossMark(ctx, baseX, y, 12, color, 3.0, 14);
       } else if (n.status === 'miss') {
-        // 漏切：红色小叉
         this.drawCrossMark(ctx, baseX, y, 8, 'rgba(255, 77, 109, 0.78)', 2.0, 6);
       }
     }
 
     // 5. 判定线上的实时横推白 X 光标
-    const cursorX = baseX + faderRaw * waveMaxW;
+    const cursorX = baseX + dir * faderRaw * waveMaxW;
     this.drawCrossMark(
       ctx,
       cursorX,
@@ -464,12 +472,14 @@ export class StageRenderer {
   }
 
   /**
-   * Platter 模式：1:1 复刻视频 00:10 - 00:18 效果
-   * 标准 TTM 搓盘曲线滚动 + 实时玩家搓盘曲线重合度发光着色
+   * Platter 模式：支持左盘/右盘镜像
    */
-  drawPlatterMode(ctx, W, H, judgeY, currentBeat, pattern, platterPos) {
+  drawPlatterMode(ctx, W, H, judgeY, currentBeat, pattern, platterPos, deck = 'right') {
     const isNarrow = W < 460;
-    const centerX = isNarrow ? W * 0.26 : W * 0.45;
+    const isLeft = deck === 'left';
+    const dir = isLeft ? -1 : 1;
+    const rawCenterX = isNarrow ? W * 0.26 : W * 0.45;
+    const centerX = isLeft ? W - rawCenterX : rawCenterX;
     const ampX = isNarrow ? W * 0.56 : Math.min(W * 0.24, 175);
 
     ctx.save();
@@ -482,7 +492,7 @@ export class StageRenderer {
     ctx.lineTo(centerX, H);
     ctx.stroke();
 
-    // 2. 绘制标准目标 TTM 搓盘曲线（覆盖全屏：上方未来谱面 + 下方参照线）
+    // 2. 绘制标准目标 TTM 搓盘曲线
     if (pattern && typeof pattern.platterFn === 'function') {
       const ppb = this.getPixelsPerBeat();
       const stepPx = 3;
@@ -491,7 +501,7 @@ export class StageRenderer {
         const beat = currentBeat + (judgeY - y) / ppb;
         const loopB = ((beat % pattern.loopBeats) + pattern.loopBeats) % pattern.loopBeats;
         const val = pattern.platterFn(loopB);
-        const x = centerX + val * ampX;
+        const x = centerX + dir * val * ampX;
         if (y === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
@@ -500,7 +510,7 @@ export class StageRenderer {
       ctx.stroke();
     }
 
-    // 3. 绘制玩家实时搓盘轨迹（判定线下方，根据与目标曲线误差动态变色）
+    // 3. 绘制玩家实时搓盘轨迹
     if (this.history.length > 1) {
       for (let i = this.history.length - 1; i >= 1; i--) {
         const p1 = this.history[i];
@@ -510,8 +520,8 @@ export class StageRenderer {
         if (y1 < judgeY - 2) continue;
         if (y0 > H + 20) break;
 
-        const x1 = centerX + p1.platter * ampX;
-        const x0 = centerX + p0.platter * ampX;
+        const x1 = centerX + dir * p1.platter * ampX;
+        const x0 = centerX + dir * p0.platter * ampX;
 
         let segColor = '#ffffff';
         if (p1.targetPlatter !== null) {
@@ -537,30 +547,35 @@ export class StageRenderer {
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.72)';
     ctx.lineWidth = 1.6;
     ctx.beginPath();
-    ctx.moveTo(centerX - ampX * 0.6, judgeY);
-    ctx.lineTo(centerX + ampX * 1.35, judgeY);
+    ctx.moveTo(centerX - dir * ampX * 0.6, judgeY);
+    ctx.lineTo(centerX + dir * ampX * 1.35, judgeY);
     ctx.stroke();
 
     // 5. 判定线上的实时玩家搓盘白 X 光标
-    const cursorX = centerX + platterPos * ampX;
+    const cursorX = centerX + dir * platterPos * ampX;
     this.drawCrossMark(ctx, cursorX, judgeY, 9, '#ffffff', 2.4, 14);
 
     ctx.restore();
   }
 
   /**
-   * Combo 综合模式：同时展示转盘 TTM 曲线 + 横推切音点
-   * 横推开音时玩家轨迹为高亮实线，关音时为暗灰虚线
+   * Combo 综合模式：支持左盘/右盘镜像
+   * 右盘：左横推轨 + 右唱盘曲线；左盘：左唱盘曲线 + 右横推轨
    */
-  drawComboMode(ctx, W, H, judgeY, currentBeat, bpm, pattern, faderRaw, faderOpen, platterPos) {
+  drawComboMode(ctx, W, H, judgeY, currentBeat, bpm, pattern, faderRaw, faderOpen, platterPos, deck = 'right') {
     const isNarrow = W < 460;
-    const centerX = isNarrow ? W * 0.32 : W * 0.46;
+    const isLeft = deck === 'left';
+    const dir = isLeft ? -1 : 1;
+    const rawCenterX = isNarrow ? W * 0.32 : W * 0.46;
     const ampX = isNarrow ? W * 0.52 : Math.min(W * 0.22, 165);
-    const faderTrackX = isNarrow ? W * 0.14 : centerX - ampX * 0.55;
+    const rawFaderTrackX = isNarrow ? W * 0.14 : rawCenterX - ampX * 0.55;
+
+    const centerX = isLeft ? W - rawCenterX : rawCenterX;
+    const faderTrackX = isLeft ? W - rawFaderTrackX : rawFaderTrackX;
 
     ctx.save();
 
-    // 左侧横推切音基准轨
+    // 横推切音基准轨
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -575,7 +590,7 @@ export class StageRenderer {
       for (let y = 0; y <= H; y += 3) {
         const beat = currentBeat + (judgeY - y) / ppb;
         const loopB = ((beat % pattern.loopBeats) + pattern.loopBeats) % pattern.loopBeats;
-        const x = centerX + pattern.platterFn(loopB) * ampX;
+        const x = centerX + dir * pattern.platterFn(loopB) * ampX;
         if (y === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
@@ -595,8 +610,8 @@ export class StageRenderer {
         if (y0 > H + 20) break;
 
         ctx.beginPath();
-        ctx.moveTo(centerX + p1.platter * ampX, y1);
-        ctx.lineTo(centerX + p0.platter * ampX, y0);
+        ctx.moveTo(centerX + dir * p1.platter * ampX, y1);
+        ctx.lineTo(centerX + dir * p0.platter * ampX, y0);
         if (p1.faderOpen) {
           ctx.strokeStyle = '#22e58b';
           ctx.lineWidth = 3.2;
@@ -621,9 +636,9 @@ export class StageRenderer {
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
         ctx.lineWidth = 1.8;
         ctx.beginPath();
-        ctx.moveTo(faderTrackX + 10, y - 9);
-        ctx.lineTo(faderTrackX - 7, y);
-        ctx.lineTo(faderTrackX + 10, y + 9);
+        ctx.moveTo(faderTrackX + dir * 10, y - 9);
+        ctx.lineTo(faderTrackX - dir * 7, y);
+        ctx.lineTo(faderTrackX + dir * 10, y + 9);
         ctx.stroke();
       } else if (n.status === 'perfect' || n.status === 'good') {
         this.drawCrossMark(ctx, faderTrackX, y, 10, n.status === 'perfect' ? '#22e58b' : '#f5b942', 2.8, 12);
@@ -636,37 +651,45 @@ export class StageRenderer {
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
     ctx.lineWidth = 1.6;
     ctx.beginPath();
-    ctx.moveTo(faderTrackX - 30, judgeY);
-    ctx.lineTo(centerX + ampX * 1.35, judgeY);
+    ctx.moveTo(faderTrackX - dir * 30, judgeY);
+    ctx.lineTo(centerX + dir * ampX * 1.35, judgeY);
     ctx.stroke();
 
-    // 双光标：左横推指示点 + 右转盘 X
+    // 双光标
     this.drawCrossMark(ctx, faderTrackX, judgeY, 7, faderOpen ? '#22e58b' : 'rgba(255,255,255,0.45)', 2.2, faderOpen ? 12 : 0);
-    this.drawCrossMark(ctx, centerX + platterPos * ampX, judgeY, 9, '#ffffff', 2.4, 12);
+    this.drawCrossMark(ctx, centerX + dir * platterPos * ampX, judgeY, 9, '#ffffff', 2.4, 12);
 
     ctx.restore();
   }
 
   /**
-   * Free 自由示波模式（对标 Scratch Visualizer）
-   * 左栏：实时转盘 TTM 曲线（开音亮绿/白，关音暗灰）
-   * 右栏：实时横推开合波形
+   * Free 自由示波模式：支持左盘/右盘左右栏镜像
+   * 左盘（Deck L）：左栏唱盘轨迹 + 右栏横推波形
+   * 右盘（Deck R）：左栏横推波形 + 右栏唱盘轨迹
    */
-  drawFreeMode(ctx, W, H, judgeY, currentBeat, faderRaw, faderOpen, platterPos) {
+  drawFreeMode(ctx, W, H, judgeY, currentBeat, faderRaw, faderOpen, platterPos, deck = 'right') {
     const isNarrow = W < 460;
-    const platterCenterX = isNarrow ? W * 0.28 : W * 0.36;
+    const isLeft = deck === 'left';
+
     const platterAmp = isNarrow ? W * 0.22 : Math.min(W * 0.18, 140);
-    const faderBaseX = isNarrow ? W * 0.60 : W * 0.65;
-    const faderAmp = isNarrow ? W * 0.32 : Math.min(W * 0.2, 160);
+    const faderAmp = isNarrow ? W * 0.30 : Math.min(W * 0.2, 160);
+
+    const platterCenterX = isLeft
+      ? (isNarrow ? W * 0.28 : W * 0.34)
+      : (isNarrow ? W * 0.72 : W * 0.66);
+    const faderBaseX = isLeft
+      ? (isNarrow ? W * 0.88 : W * 0.78)
+      : (isNarrow ? W * 0.12 : W * 0.22);
+    const faderDir = isLeft ? -1 : 1;
 
     ctx.save();
 
     // 区域标题
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.32)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
     ctx.font = '700 11px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('PLATTER 唱盘轨迹 (TTM)', platterCenterX, 26);
-    ctx.fillText('CROSSFADER 横推波形', faderBaseX + faderAmp * 0.5, 26);
+    ctx.fillText(isLeft ? 'DECK L 唱盘轨迹' : 'DECK R 唱盘轨迹', platterCenterX, 26);
+    ctx.fillText('CROSSFADER 横推', faderBaseX + faderDir * faderAmp * 0.5, 26);
 
     // 基准线
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
@@ -705,7 +728,7 @@ export class StageRenderer {
         const y = this.beatToY(pt.beat, currentBeat);
         if (y < judgeY - 2) continue;
         if (y > H + 20) break;
-        const x = faderBaseX + pt.fader * faderAmp;
+        const x = faderBaseX + faderDir * pt.fader * faderAmp;
         if (!started) {
           ctx.moveTo(x, y);
           started = true;
@@ -722,13 +745,13 @@ export class StageRenderer {
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.68)';
     ctx.lineWidth = 1.6;
     ctx.beginPath();
-    ctx.moveTo(40, judgeY);
-    ctx.lineTo(W - 40, judgeY);
+    ctx.moveTo(30, judgeY);
+    ctx.lineTo(W - 30, judgeY);
     ctx.stroke();
 
     // 双实时光标
     this.drawCrossMark(ctx, platterCenterX + platterPos * platterAmp, judgeY, 9, faderOpen ? '#22e58b' : '#ffffff', 2.4, 12);
-    this.drawCrossMark(ctx, faderBaseX + faderRaw * faderAmp, judgeY, 9, '#ffffff', 2.4, 12);
+    this.drawCrossMark(ctx, faderBaseX + faderDir * faderRaw * faderAmp, judgeY, 9, '#ffffff', 2.4, 12);
 
     ctx.restore();
   }

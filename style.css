@@ -60,6 +60,66 @@ html, body {
   min-width: 0;
 }
 
+/* 左右 Deck 切换开关 */
+.deck-switch {
+  display: inline-flex;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.deck-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.deck-btn:hover {
+  color: #fff;
+}
+
+.deck-btn.active[data-deck="left"] {
+  background: var(--accent-blue);
+  color: #061322;
+}
+
+.deck-btn.active[data-deck="right"] {
+  background: var(--accent-green);
+  color: #05160d;
+}
+
+/* Deck L 左盘整屏镜像：HUD 统计与实时仪表左右互换，横推条从右向左展开 */
+#app.deck-left .hud-stats {
+  left: auto;
+  right: 18px;
+}
+
+#app.deck-left .hud-meters {
+  right: auto;
+  left: 18px;
+}
+
+#app.deck-left .meter-fill {
+  left: auto;
+  right: 0;
+  background: linear-gradient(270deg, #ffffff, var(--accent-blue));
+}
+
+#app.deck-left .meter-cutline {
+  left: auto;
+}
+
 .brand-dot {
   width: 10px;
   height: 10px;
@@ -740,12 +800,20 @@ html, body {
     padding: 5px 7px;
     font-size: 11px;
   }
+  .deck-btn {
+    padding: 4px 6px;
+    font-size: 10px;
+  }
 
   /* 窄窗 HUD 防重叠 */
   .hud-stats {
     top: 10px;
     left: 10px;
     gap: 6px;
+  }
+  #app.deck-left .hud-stats {
+    left: auto;
+    right: 10px;
   }
   .stat-item {
     min-width: 58px;
@@ -764,6 +832,10 @@ html, body {
     right: 10px;
     width: 124px;
     gap: 5px;
+  }
+  #app.deck-left .hud-meters {
+    right: auto;
+    left: 10px;
   }
   .meter-box {
     padding: 5px 7px;
